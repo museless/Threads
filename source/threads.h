@@ -1,12 +1,13 @@
-#ifndef	_MPCTL_H
-#define	_MPCTL_H
+#ifndef _MPCTL_H
+#define _MPCTL_H
 
 /*---------------------
-	include
+    include
 -----------------------*/
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include <pthread.h>
 
@@ -18,62 +19,59 @@
 
 
 /*---------------------
-	define
+    define
 -----------------------*/
-
-/* normal use */
-#define	PTH_RUN_OK              1
-#define	PTH_RUN_END		        0
-#define	PTH_RUN_FAIL		    -1
-
-#define	PTH_RUN_PERMANENT	    0x1
 
 
 /*---------------------
-	typedef
+    typedef
 -----------------------*/
 
-typedef	pthread_mutex_t	        pmut_t;
-typedef	pthread_cond_t	        pcd_t;
+typedef pthread_mutex_t     mutex_t;
+typedef pthread_cond_t      cond_t;
+typedef pthread_barrier_t   barrier_t;
+typedef pthread_t           thread_t;
 
-typedef	void	                (*pthrun)(void *);
+typedef void                (*throutine)(void *);
 
-typedef	struct pthread_pool     PTHPOOL;
-typedef	struct pthread_entity	PTHENT;
+typedef struct threadpool   Threads;
+typedef struct threadentity Pthent;
 
 
 /*---------------------
-	struct
+    struct
 -----------------------*/
 
-struct	pthread_pool {
-	PTHENT *pl_list;
+struct pthread_pool {
+    Pthent     *threads;
+    Pthent     *free;
 
-	TMVAL   pl_tim;
-	int     pl_cnt;
+    int32_t     cnt;
+    barrier_t   barrier;
 };
 
-struct	pthread_entity {
-	void   *pe_data;
-	pthrun	pe_run;
+struct threadentity {
+    thread_t    tid;
+    Pthent     *next_free;
 
-	pth_t	pe_tid;
+    throutine   routine;
+    void       *params;
 
-	pmut_t	pe_mutex;
-	pcd_t	pe_cond;
+    mutex_t     mutex;
+    cond_t      cond;
 
-    int     pe_flags;
+    int32_t     flags;
 };
 
 
 /*---------------------
-	glo fun
+    glo fun
 -----------------------*/
 
 PTHPOOL    *mpc_create(int nPthread);
-int 	    mpc_thread_wake(PTHPOOL *threadPool, pthrun runFun, void *pPara);
-void	    mpc_thread_wait(PTHPOOL *thPool);
-void	    mpc_destroy(PTHPOOL *thPool);
+int         mpc_thread_wake(PTHPOOL *threadPool, pthrun runFun, void *pPara);
+void        mpc_thread_wait(PTHPOOL *thPool);
+void        mpc_destroy(PTHPOOL *thPool);
 
 
 #endif

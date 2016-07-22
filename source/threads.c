@@ -206,6 +206,7 @@ void *_thread_routine(void *thread_para)
     Pthent  *th_entity = (Pthent *)thread_para;
 
     _thread_prepare(th_entity);
+    pthread_cleanup_push(_thread_cleanup, entity);
 
     while (true) {
         pthread_mutex_lock(&th_entity->mutex);
@@ -223,6 +224,9 @@ void *_thread_routine(void *thread_para)
         pthread_cond_signal(&th_entity->cond);
         pthread_mutex_unlock(&th_entity->mutex);
     }
+
+    pthread_cleanup_pop(0);
+    return  NULL;
 }
 
 
@@ -234,7 +238,6 @@ bool _thread_prepare(Pthent *entity)
             (errno = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL)))
             return  false;
 
-        pthread_cleanup_push(_thread_cleanup, entity);
         entity->flags = PTH_IS_READY;
         pthread_barrier_wait(&entity->barrier);
     }

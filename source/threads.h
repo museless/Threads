@@ -68,10 +68,10 @@ struct threadentity {
     glo fun
 -----------------------*/
 
-PTHPOOL    *mpc_create(int nPthread);
-int         mpc_thread_wake(PTHPOOL *threadPool, pthrun runFun, void *pPara);
-void        mpc_thread_wait(PTHPOOL *thPool);
-void        mpc_destroy(PTHPOOL *thPool);
+bool    mpc_create(Pthreads *pool, int numbers);
+int     mpc_thread_wake(PTHPOOL *threadPool, pthrun runFun, void *pPara);
+void    mpc_thread_wait(PTHPOOL *thPool);
+void    mpc_destroy(PTHPOOL *thPool);
 
 
 #endif

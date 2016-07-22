@@ -46,15 +46,14 @@ enum PTHREAD_STATE {
 -*---------------------------------------------*/
 
 /* Part Five */
-static  void   *mpc_thread_pool_run(void *thread_para);
+static  void   *_thread_routine(void *thread_para);
 static  void    _thread_prepare(Pthent *entity);
-static  void    mpc_thread_self_exit(Pthent *entity);
 
 /* Part Six */
-static  void    mpc_wait_clock(int microsec);
-static  Pthent *mpc_search_empty(Threads *thread_pool);
+static  void    _time_wait(int microsec);
+static  Pthent *_empty_slot(Threads *thread_pool);
 static  int     _thread_create(Pthreads *pool, Pthent *thread);
-static  void    mpc_thread_cleanup(void *thread_para);
+static  void    _thread_cleanup(void *thread_para);
 
 static  void    mpc_thread_join(Pthent *th_entity);
 
@@ -75,7 +74,7 @@ static  void    mpc_thread_therror(Pthent *entity, char *errStr, int nErr);
 /*-----mpc_create------*/
 bool mpc_create(Pthreads *pool, int numbers)
 {
-    if (!pool || pthread_num < 1) {
+    if (!pool || numbers < 1) {
         errno = EINVAL;
         return  false;
     }
@@ -116,7 +115,7 @@ bool mpc_thread_wake(Threads *pool, pthrun func, void *params)
 
     Pthent *thread;
 
-    if (!(thread = mpc_search_empty(pool)))
+    if (!(thread = _empty_slot(pool)))
         return  false;
 
     thread->routine = func;
@@ -152,24 +151,26 @@ void mpc_thread_wait(Threads *thread_pool)
 
 
 /*-----mpc_destroy-----*/
-void mpc_destroy(Threads *thread_pool)
+void mpc_destroy(Threads *pool)
 {
     Pthent *th_entity;
     int     status;
 
-    if (!thread_pool)
+    if (!pool) {
+        errno = EINVAL;
         return;
+    }
 
-    if (thread_pool->threads) {
-        th_entity = thread_pool->threads;
+    if (pool->threads) {
+        th_entity = pool->threads;
 
-        for (; th_entity < thread_pool->threads + thread_pool->pl_cnt; th_entity++) {
+        for (; th_entity < pool->threads + pool->pl_cnt; th_entity++) {
             if (th_entity->flags != PTH_WAS_KILLED) {
                 if (!pthread_tryjoin_np(th_entity->pe_tid, NULL))
                     continue;
 
                 if (th_entity->flags == PTH_IS_BUSY) {
-                    mpc_wait_clock(MILLISEC_500);
+                    _time_wait(MILLISEC_500);
 
                     status = pthread_mutex_trylock(&th_entity->pe_mutex);
 
@@ -184,48 +185,43 @@ void mpc_destroy(Threads *thread_pool)
             }
         }
 
-        free(thread_pool->threads);
+        free(pool->threads);
     }
 
-    pthread_barrier_destroy(&thread_pool->barrier);
+    pthread_barrier_destroy(&pool->barrier);
 }
 
 
 /*----------------------------------------------
  *  Part Five: Associated with thread pool run
  *
- *      1. mpc_thread_pool_run
+ *      1. _thread_routine
  *      2. _thread_prepare
- *      3. mpc_thread_self_exit
  *
 **----------------------------------------------*/
 
-/*-----mpc_thread_pool_run-----*/
-void *mpc_thread_pool_run(void *thread_para)
+/*-----_thread_routine-----*/
+void *_thread_routine(void *thread_para)
 {
     Pthent  *th_entity = (Pthent *)thread_para;
 
     _thread_prepare(th_entity);
 
-    while (PTH_RUN_PERMANENT) {
-        pthread_mutex_lock(&th_entity->pe_mutex);
+    while (true) {
+        pthread_mutex_lock(&th_entity->mutex);
 
         while (th_entity->flags != PTH_IS_BUSY) {
             if (th_entity->flags == PTH_ALREADY_KILLED) 
-                mpc_thread_self_exit(th_entity);
+                pthread_exit(NULL);
 
-            pthread_cond_wait(&th_entity->pe_cond, &th_entity->pe_mutex);
+            pthread_cond_wait(&th_entity->cond, &th_entity->mutex);
         }
 
-        /* routine running */
-        pthread_cleanup_push(mpc_thread_cleanup, th_entity);
         th_entity->routine(th_entity->params);
-        pthread_cleanup_pop(0);
-
         th_entity->flags = PTH_IS_READY;
 
-        pthread_cond_signal(&th_entity->pe_cond);
-        pthread_mutex_unlock(&th_entity->pe_mutex);
+        pthread_cond_signal(&th_entity->cond);
+        pthread_mutex_unlock(&th_entity->mutex);
     }
 }
 
@@ -238,6 +234,7 @@ bool _thread_prepare(Pthent *entity)
             (errno = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL)))
             return  false;
 
+        pthread_cleanup_push(_thread_cleanup, entity);
         entity->flags = PTH_IS_READY;
         pthread_barrier_wait(&entity->barrier);
     }
@@ -246,32 +243,19 @@ bool _thread_prepare(Pthent *entity)
 }
 
 
-/*-----mpc_thread_self_exit-----*/
-void mpc_thread_self_exit(Pthent *entity)
-{
-    pthread_mutex_unlock(&entity->pe_mutex);
-
-    pthread_cond_destroy(&entity->pe_cond);
-    pthread_mutex_destroy(&entity->pe_mutex);
-
-    pthread_detach(pthread_self());
-    pthread_exit(NULL);
-}
-
-
 /*-----------------------------------------------
  *          Part Six: Other part
  *
- *          1. mpc_wait_clock
- *          2. mpc_search_empty
+ *          1. _time_wait
+ *          2. _empty_slot
  *          3. _thread_create
- *          4. mpc_thread_cleanup
+ *          4. _thread_cleanup
  *          6. mpc_thread_join
  *
 **-----------------------------------------------*/
 
-/*-----mpc_wait_clock-----*/
-void mpc_wait_clock(int microsec)
+/*-----_time_wait-----*/
+void _time_wait(int microsec)
 {
     TMVAL   thread_clock;
 
@@ -281,8 +265,8 @@ void mpc_wait_clock(int microsec)
 }
 
 
-/*-----mpc_search_empty-----*/
-Pthent *mpc_search_empty(Threads *pool)
+/*-----_empty_slot-----*/
+Pthent *_empty_slot(Threads *pool)
 {
     if (pool->free) {
         Pthent  *thread = pool->free;
@@ -310,18 +294,22 @@ bool _thread_create(Pthreads *pool, Pthent *thread)
         (errno = pthread_cond_init(&thread->cond, NULL)))
         return  false;
 
-    errno = pthread_create(&entity->tid, NULL, mpc_thread_run, (void *)thread);
+    errno = pthread_create(&entity->tid, NULL, _thread_routine, thread);
 
     return  (errno) ? false : true;
 }
 
 
-/*-----mpc_thread_cleanup-----*/
-void mpc_thread_cleanup(void *thread_para)
+/*-----_thread_cleanup-----*/
+void _thread_cleanup(void *thread_para)
 {
     Pthent  *entity = (Pthent *)thread_para;
 
-    pthread_mutex_unlock(&entity->pe_mutex);
+    pthread_mutex_unlock(&entity->mutex);
+    
+    pthread_mutex_destroy(&entity->mutex);
+    pthread_cond_destroy(&entity->cond);
+
     entity->flags = PTH_WAS_KILLED;
 }
 
@@ -343,7 +331,7 @@ void mpc_thread_join(Pthent *th_entity)
  *
  *      1. mpc_thread_therror
  *
-_*---------------------------------------------*/
+-*---------------------------------------------*/
 
 /*-----mpc_thread_therror-----*/
 void mpc_thread_therror(Pthent *entity, char *errStr, int nErr)

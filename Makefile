@@ -1,17 +1,17 @@
 # flags #
 CC		= gcc
-CFLAGS	= -g -Wall -std=c99 -D_DEFAULT_SOURCE
+CFLAGS	= -g -Wall -std=c99 -pthread -D_DEFAULT_SOURCE
 
 # elf #
-EXMDP	= test
+EXTHS	= threads 
 
 # obj #
-OMDP	= source/mempool.c source/example.c 
+OTHS	= source/threads.c source/example.c 
 
 # phony #
 .phony:	build
 
-build	: $(EXMDP)
+build	: $(EXTHS)
 
-$(EXMDP) : $(OMDP)
-	$(CC) -o $(EXMDP) $(OMDP) $(CFLAGS)
+$(EXTHS) : $(OTHS)
+	$(CC) -o $(EXTHS) $(OTHS) $(CFLAGS)

@@ -30,16 +30,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <pthread.h>
 
+#include <errno.h>
+
 #include <time.h>
 #include <sys/time.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <unistd.h>
-
-#include "satomic.h"
 
 
 /*---------------------------------------------
@@ -57,13 +56,12 @@ typedef struct threadpool   Threads;
 typedef struct threadentity Pthent;
 
 
-/*---------------------
-    struct
------------------------*/
+/*---------------------------------------------
+ *            Part Three: Struct
+-*---------------------------------------------*/
 
-struct pthread_pool {
+struct threadpool {
     Pthent     *threads;
-    Pthent     *free;
 
     int32_t     cnt;
     barrier_t   barrier;
@@ -71,11 +69,11 @@ struct pthread_pool {
 
 struct threadentity {
     thread_t    tid;
-    Pthent     *next_free;
 
     throutine   routine;
     void       *params;
 
+    barrier_t  *barrier;
     mutex_t     mutex;
     cond_t      cond;
 
@@ -87,8 +85,8 @@ struct threadentity {
  *            Part Four: Function
 -*---------------------------------------------*/
 
-bool    mpc_create(Pthreads *pool, int numbers);
-int     mpc_thread_wake(PTHPOOL *threadPool, pthrun runFun, void *pPara);
-void    mpc_thread_wait(PTHPOOL *thPool);
-void    mpc_destroy(PTHPOOL *thPool);
+bool    mpc_create(Threads *pool, int numbers);
+bool    mpc_thread_wake(Threads *pool, throutine func, void *params);
+bool    mpc_thread_wait(Threads *pool);
+bool    mpc_destroy(Threads *pool);
 

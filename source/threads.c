@@ -1,5 +1,5 @@
 /*---------------------------------------------
- *  modification time: 2016.07.18 20:10
+ *  modification time: 2016.07.24 10:10
  *  creator: Muse
  *  mender: Muse
  *  intro: pthread pool
@@ -15,7 +15,7 @@
  *
  *      Part Four:  Muse thpool API
  *      Part Five:  Thread routine 
- *      Part Six:   Other part 
+ *      Part Six:   Thread control 
  *
 -*---------------------------------------------*/
 
@@ -45,12 +45,12 @@ enum PTHREAD_STATE {
 
 /* Part Five */
 static  void   *_thread_routine(void *thread_para);
-static  void    _thread_prepare(Pthent *entity);
+static  bool    _thread_prepare(Pthent *entity);
 
 /* Part Six */
-static  void    _time_wait(int microsec);
+static  void    _time_wait(int sec, int microsec);
 static  Pthent *_empty_slot(Threads *thread_pool);
-static  int     _thread_create(Pthreads *pool, Pthent *thread);
+static  bool    _thread_create(Threads *pool, Pthent *thread);
 static  void    _thread_cleanup(void *thread_para);
 
 static  void    _thread_join(Pthent *th_entity);
@@ -67,7 +67,7 @@ static  void    _thread_join(Pthent *th_entity);
 -*---------------------------------------------*/
 
 /*-----mpc_create------*/
-bool mpc_create(Pthreads *pool, int numbers)
+bool mpc_create(Threads *pool, int numbers)
 {
     if (!pool || numbers < 1) {
         errno = EINVAL;
@@ -77,7 +77,6 @@ bool mpc_create(Pthreads *pool, int numbers)
     if ((errno = pthread_barrier_init(&pool->barrier, NULL, numbers + 1)))
         return  false;
 
-    pool->free = NULL;
     pool->cnt = numbers;
 
     if (!(pool->threads = malloc(pool->cnt * sizeof(Pthent)))) {
@@ -101,7 +100,7 @@ bool mpc_create(Pthreads *pool, int numbers)
 
 
 /*-----mpc_thread_wake-----*/
-bool mpc_thread_wake(Threads *pool, pthrun func, void *params)
+bool mpc_thread_wake(Threads *pool, throutine func, void *params)
 {
     if (!pool) {
         errno = EINVAL;
@@ -125,28 +124,39 @@ bool mpc_thread_wake(Threads *pool, pthrun func, void *params)
 
 
 /*-----mpc_thread_wait-----*/
-void mpc_thread_wait(Threads *thread_pool)
+bool mpc_thread_wait(Threads *pool)
 {
-    Pthent *thList;
+    if (!pool || !pool->threads) {
+        errno = EINVAL;
+        return  false;
+    }   
 
-    if (thread_pool && thread_pool->threads) {
-        /* pass the watcher thread */
-        for (thList = thread_pool->threads + 1;
-             thList < thread_pool->threads + thread_pool->pl_cnt; 
-             thList++) {
-            pthread_mutex_lock(&thList->pe_mutex);
+    Pthent *entity = pool->threads;
 
-            while (thList->flags == PTH_IS_BUSY)
-                pthread_cond_wait(&thList->pe_cond, &thList->pe_mutex);
+    for (; entity < pool->threads + pool->cnt; entity++) {
+        errno = pthread_mutex_trylock(&entity->mutex);
 
-            pthread_mutex_unlock(&thList->pe_mutex);
+        if (errno == EBUSY && entity->flags == PTH_IS_BUSY) {
+            _time_wait(0, 20000);
+
+            errno = pthread_mutex_trylock(&entity->mutex);
+
+            if (errno == EBUSY)
+                return  false;
         }
+
+        while (entity->flags == PTH_IS_BUSY)
+            pthread_cond_wait(&entity->cond, &entity->mutex);
+
+        pthread_mutex_unlock(&entity->mutex);
     }
+
+    return  true;
 }
 
 
 /*-----mpc_destroy-----*/
-void mpc_destroy(Threads *pool)
+bool mpc_destroy(Threads *pool)
 {
     if (!pool) {
         errno = EINVAL;
@@ -157,9 +167,10 @@ void mpc_destroy(Threads *pool)
         Pthent *th_entity = pool->threads;
 
         for (; th_entity < pool->threads + pool->cnt; th_entity++) {
-            if (th_entity->flags != PTH_WAS_KILLED) {
+            if (th_entity->flags != PTH_WAS_KILLED ||
+                th_entity->flags != PTH_IS_UNINITED) {
                 if (th_entity->flags == PTH_IS_BUSY)
-                    _time_wait(50000000);
+                    _time_wait(0, 10000);
 
                 errno = pthread_mutex_trylock(&th_entity->mutex);
 
@@ -169,17 +180,18 @@ void mpc_destroy(Threads *pool)
                 }
 
                 th_entity->flags = PTH_ALREADY_KILLED;
-                pthread_cond_signal(&th_entity->pe_cond);
+                pthread_cond_signal(&th_entity->cond);
             }
         }
 
         free(pool->threads);
     }
 
-    pool->free = NULL;
     pool->cnt = 0;
 
     pthread_barrier_destroy(&pool->barrier);
+
+    return  true;
 }
 
 
@@ -231,7 +243,7 @@ bool _thread_prepare(Pthent *entity)
             return  false;
 
         entity->flags = PTH_IS_READY;
-        pthread_barrier_wait(&entity->barrier);
+        pthread_barrier_wait(entity->barrier);
     }
 
     return  true;
@@ -239,7 +251,7 @@ bool _thread_prepare(Pthent *entity)
 
 
 /*-----------------------------------------------
- *          Part Six: Other part
+ *          Part Six: Thread control
  *
  *          1. _time_wait
  *          2. _empty_slot
@@ -250,45 +262,50 @@ bool _thread_prepare(Pthent *entity)
 **-----------------------------------------------*/
 
 /*-----_time_wait-----*/
-void _time_wait(int microsec)
+void _time_wait(int sec, int microsec)
 {
-    TMVAL   thread_clock;
+    struct timeval  clock;
 
-    thread_clock.tv_sec = 0;
-    thread_clock.tv_usec = microsec;
-    select(0, NULL, NULL, NULL, &thread_clock);
+    clock.tv_sec = sec;
+    clock.tv_usec = microsec;
+    select(0, NULL, NULL, NULL, &clock);
 }
 
 
 /*-----_empty_slot-----*/
 Pthent *_empty_slot(Threads *pool)
 {
-    Pthent  *thread = NULL;
+    Pthent  *entity = pool->threads;
 
-    if (pool->free) {
-        thread = pool->free;
-        pool->free = thread->next_free;
-        thread->next_free = NULL;
+    for (; entity < pool->threads + pool->cnt; entity++) {
+        if (entity->flags == PTH_IS_READY) {
+            if ((errno = pthread_mutex_trylock(&entity->mutex))) {
+                if (errno == EBUSY)
+                    continue;
+
+                return  NULL;
+            }
+
+            return  entity;
+        }
     }
 
-    return  thread;
+    return  entity;
 }
 
 
 /*-----_thread_create-----*/
-bool _thread_create(Pthreads *pool, Pthent *thread)
+bool _thread_create(Threads *pool, Pthent *thread)
 {
     thread->routine = thread->params = NULL;
     thread->flags = PTH_IS_UNINITED;
-
-    thread->next_free = pool->free;
-    pool->free = thread;
+    thread->barrier = &pool->barrier; 
 
     if ((errno = pthread_mutex_init(&thread->mutex, NULL)) ||
         (errno = pthread_cond_init(&thread->cond, NULL)))
         return  false;
 
-    errno = pthread_create(&entity->tid, NULL, _thread_routine, thread);
+    errno = pthread_create(&thread->tid, NULL, _thread_routine, thread);
 
     return  (errno) ? false : true;
 }
@@ -312,7 +329,7 @@ void _thread_cleanup(void *thread_para)
 void _thread_join(Pthent *th_entity)
 {
     pthread_cancel(th_entity->tid);
-    pthread_join(th_entity->pe_tid, NULL);
+    pthread_join(th_entity->tid, NULL);
 }
 
 

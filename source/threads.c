@@ -1,5 +1,5 @@
 /*---------------------------------------------
- *  modification time: 2016.07.24 10:10
+ *  modification time: 2016.08.02 22:20
  *  creator: Muse
  *  mender: Muse
  *  intro: pthread pool
@@ -290,7 +290,7 @@ Pthent *_empty_slot(Threads *pool)
         }
     }
 
-    return  entity;
+    return  NULL;
 }
 
 

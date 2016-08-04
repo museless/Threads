@@ -87,6 +87,7 @@ struct threadentity {
 
 bool    mpc_create(Threads *pool, int numbers);
 bool    mpc_thread_wake(Threads *pool, throutine func, void *params);
+bool    mpc_thread_trywake(Threads *pool, throutine func, void *params);
 bool    mpc_thread_wait(Threads *pool);
 bool    mpc_destroy(Threads *pool);
 

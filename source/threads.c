@@ -61,8 +61,9 @@ static  void    _thread_join(Pthent *th_entity);
  *
  *          1. mpc_create
  *          2. mpc_thread_wake
- *          3. mpc_thread_wait
- *          4. mpc_destroy
+ *          3. mpc_thread_trywake
+ *          4. mpc_thread_wait
+ *          5. mpc_destroy
  *
 -*---------------------------------------------*/
 
@@ -99,8 +100,8 @@ bool mpc_create(Threads *pool, int numbers)
 }
 
 
-/*-----mpc_thread_wake-----*/
-bool mpc_thread_wake(Threads *pool, throutine func, void *params)
+/*-----mpc_thread_trywake-----*/
+bool mpc_thread_trywake(Threads *pool, throutine func, void *params)
 {
     if (!pool) {
         errno = EINVAL;

@@ -129,7 +129,7 @@ bool mpc_create(Threads *pool, int numbers)
 /*-----mpc_thread_wake-----*/
 bool mpc_thread_wake(Threads *pool, throutine func, void *params)
 {
-    if (!pool) {
+    if (!pool || !func) {
         errno = EINVAL;
         return  false;
     }
@@ -147,6 +147,23 @@ bool mpc_thread_wake(Threads *pool, throutine func, void *params)
     pthread_mutex_unlock(&thread->mutex);
 
     return  true;
+}
+
+
+/*-----mpc_thread_trywake-----*/
+bool mpc_thread_trywake(Threads *pool, throutine func, void *params)
+{
+    if (!pool || !func) {
+        errno = EINVAL;
+        return  false;
+    }
+
+    if (!pool->freelist) {
+        errno = EBUSY;
+        return  false;
+    }
+
+    return  mpc_thread_wake(pool, func, params);
 }
 
 
@@ -196,12 +213,10 @@ bool mpc_destroy(Threads *pool)
         for (; th_entity < pool->threads + pool->cnt; th_entity++) {
             if (th_entity->flags != PTH_WAS_KILLED ||
                 th_entity->flags != PTH_IS_UNINITED) {
-                if (th_entity->flags == PTH_IS_BUSY)
-                    _time_wait(0, 10000);
-
                 errno = pthread_mutex_trylock(&th_entity->mutex);
 
                 if (errno == EBUSY && th_entity->flags == PTH_IS_BUSY) {
+                    _time_wait(0, 10000);
                     _thread_join(th_entity);
                     continue;
                 }
@@ -216,6 +231,8 @@ bool mpc_destroy(Threads *pool)
 
     pool->cnt = 0;
 
+    pthread_mutex_destroy(&pool->free_lock);
+    pthread_cond_destroy(&pool->free_cond);
     pthread_barrier_destroy(&pool->barrier);
 
     return  true;

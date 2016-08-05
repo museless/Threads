@@ -62,6 +62,10 @@ typedef struct threadentity Pthent;
 
 struct threadpool {
     Pthent     *threads;
+    Pthent     *freelist;
+
+    mutex_t     free_lock;
+    cond_t      free_cond;
 
     int32_t     cnt;
     barrier_t   barrier;
@@ -69,6 +73,9 @@ struct threadpool {
 
 struct threadentity {
     thread_t    tid;
+
+    Threads    *pool;
+    Pthent     *next;
 
     throutine   routine;
     void       *params;

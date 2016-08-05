@@ -14,7 +14,7 @@
 
 void routine(void *param)
 {
-    //while (true)
+    for (int idx = 0; idx < 1000000; idx++)
         ;   /* nothing */
 }
 
@@ -30,7 +30,7 @@ int main(void)
 {
     Threads pool;
 
-    if (!mpc_create(&pool, 4)) {
+    if (!mpc_create(&pool, 1)) {
         perror("mpc_create");
         return  -1;
     }

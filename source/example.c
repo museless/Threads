@@ -40,6 +40,8 @@ int main(void)
         return  -1;
     }
 
+    mpc_thread_wait(&pool);
+
     if (!mpc_thread_trywake(&pool, run, NULL))
         perror("mpc_thread_wake");
 

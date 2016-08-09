@@ -30,7 +30,7 @@ int main(void)
 {
     Threads pool;
 
-    if (!mpc_create(&pool, 1)) {
+    if (!mpc_create(&pool, 1, -1, NULL)) {
         perror("mpc_create");
         return  -1;
     }

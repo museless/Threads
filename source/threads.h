@@ -65,6 +65,8 @@ struct threadpool {
     Pthent     *threads;
     Pthent     *freelist;
 
+    thread_t    holder;
+
     mutex_t     free_lock;
     cond_t      free_cond;
 

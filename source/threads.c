@@ -42,7 +42,7 @@
 }
 
 #define _check_params(pool) { \
-    if (!pool || !pool->threads) { \
+    if (!pool || !pool->threads || pool->holder != pthread_self()) { \
         errno = EINVAL; \
         return  false; \
     } \
@@ -102,6 +102,7 @@ bool mpc_create(Threads *pool, int num, int32_t how, sigset_t *sigset)
     if ((errno = pthread_barrier_init(&pool->barrier, NULL, num + 1)))
         return  false;
 
+    pool->holder = pthread_self();
     pool->cnt = num;
     pool->freelist = NULL;
     pool->how = -1;
@@ -142,10 +143,7 @@ bool mpc_create(Threads *pool, int num, int32_t how, sigset_t *sigset)
 /*-----mpc_thread_wake-----*/
 bool mpc_thread_wake(Threads *pool, throutine func, void *params)
 {
-    if (!pool || !func) {
-        errno = EINVAL;
-        return  false;
-    }
+    _check_params(pool);
 
     Pthent *thread;
 
@@ -166,10 +164,7 @@ bool mpc_thread_wake(Threads *pool, throutine func, void *params)
 /*-----mpc_thread_trywake-----*/
 bool mpc_thread_trywake(Threads *pool, throutine func, void *params)
 {
-    if (!pool || !func) {
-        errno = EINVAL;
-        return  false;
-    }
+    _check_params(pool);
 
     if (!pool->freelist) {
         errno = EBUSY;
@@ -206,10 +201,7 @@ bool mpc_thread_trywait(Threads *pool, struct timespec *abstime)
 /*-----mpc_destroy-----*/
 bool mpc_destroy(Threads *pool)
 {
-    if (!pool) {
-        errno = EINVAL;
-        return  false;
-    }
+    _check_params(pool);
 
     if (pool->threads) {
         Pthent *th_entity = pool->threads;

@@ -9,11 +9,19 @@
  *     author: Muse
 -*---------------------------------------------*/
 
+/* include */
 #include "threads.h"
+
+
+/* global */
+Threads pool;
 
 
 void routine(void *param)
 {
+    if (!mpc_destroy(&pool))
+        perror("mpc_destroy");
+
     for (int idx = 0; idx < 1000000; idx++)
         ;   /* nothing */
 }
@@ -28,8 +36,6 @@ void run(void *param)
 
 int main(void)
 {
-    Threads pool;
-
     if (!mpc_create(&pool, 1, -1, NULL)) {
         perror("mpc_create");
         return  -1;
